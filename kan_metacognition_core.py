@@ -283,8 +283,8 @@ class ProjectiveCP3MandelbrotEncoder:
             # Homogeneous degree-2 projective quadratic map on CP^3 (zero trig, zero infinity blowup)
             next_omega_0 = (omega_0 * omega_0) + C_0 * (pi_0 * pi_0)
             next_omega_1 = (omega_1 * omega_1) + C_1 * (pi_1 * pi_1)
-            next_pi_0 = 2.0 * omega_0 * pi_0
-            next_pi_1 = 2.0 * omega_1 * pi_1
+            next_pi_0 = pi_0 * pi_0
+            next_pi_1 = pi_1 * pi_1
 
             # Projective re-scaling on CP^3 (equivalence class [Z] == [lambda * Z])
             proj_norm = torch.sqrt(
@@ -317,3 +317,4 @@ class ProjectiveCP3MandelbrotEncoder:
             "projective_green_potential": green_potential.view(*orig_shape),
             "boundary_derivative": torch.sqrt(d_omega_0.abs() ** 2 + d_omega_1.abs() ** 2).view(*orig_shape),
         }
+
