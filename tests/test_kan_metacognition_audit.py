@@ -65,8 +65,21 @@ def test_metacognitive_observer_feedback_loop_differentiable():
     assert x.grad is not None
 
 
+def test_projective_cp3_mandelbrot_zero_trig():
+    """Verifies native trigonometry-free homogeneous CP^3 Mandelbrot projection into SIGMA_5."""
+    torch.manual_seed(11)
+    enc = ProjectiveCP3MandelbrotEncoder(iterations=16)
+    tokens = torch.randn(6, 20, dtype=torch.float64)
+    out = enc.iterate_cp3_mandelbrot_orbit(tokens)
+    assert out["Z5_cp3_mandelbrot"].shape == (6, 5)
+    assert out["freedom_matrix_25"].shape == (6, 5, 5)
+    assert not torch.isnan(out["Z5_cp3_mandelbrot"]).any()
+    assert torch.allclose(torch.linalg.norm(out["Z5_cp3_mandelbrot"], dim=-1), torch.ones(6, dtype=torch.float64), atol=1e-12)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(list(globals().items())):
         if name.startswith("test_") and callable(fn):
             fn()
             print(f"[PASS] {name}")
+

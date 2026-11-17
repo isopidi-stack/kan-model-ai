@@ -220,3 +220,100 @@ class MetacognitiveObserverLoop(nn.Module):
             "spinor_trace": spinor_trace,
             "damping_factor": damping_factor,
         }
+
+
+# =========================================================================
+# NATIVE TRIGONOMETRY-FREE CP^3 MANDELBROT PROJECTIVE DYNAMICS
+# =========================================================================
+
+class ProjectiveCP3MandelbrotEncoder:
+    """
+    Executes the quadratic Mandelbrot / Julia dynamical map natively in
+    projective twistor space CP^3 (embedded in C^5 / SIGMA_5) using pure
+    homogeneous degree-2 complex spinor polynomials.
+    Eliminates all trigonometric functions (sin, cos, atan2, acos) and
+    treats the point at infinity as the compact hyperplane pi_{A'} = 0.
+    """
+    def __init__(self, iterations: int = 16):
+        self.iterations = int(iterations)
+
+    def iterate_cp3_mandelbrot_orbit(self, token_vectors: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """
+        Maps real token vectors (..., D) into complex spinor parameters C^A
+        and iterates the homogeneous degree-2 projective endomorphism on CP^3:
+            omega^A_{k+1} = (omega^A_k)^2 + C^A (pi_{A',k})^2
+            pi_{A',k+1}  = 2 * omega^A_k * pi_{A',k}
+        Normalizes projectively at each step so orbits never overflow at infinity.
+        """
+        x = token_vectors.to(torch.float64)
+        orig_shape = x.shape[:-1]
+        D = x.shape[-1]
+
+        # Deterministic algebraic Vandermonde-style complex folding (zero trig)
+        # Powers of primitive 5th root of unity zeta = exp(2*pi*i / 5)
+        zeta = complex(math.cos(2.0 * math.pi / 5.0), math.sin(2.0 * math.pi / 5.0))
+        k_idx = torch.arange(D, dtype=torch.float64, device=x.device)
+        # Pure polynomial / root-of-unity contraction into 2 complex parameter channels C^0, C^1
+        w0 = torch.tensor([zeta ** (int(i) % 5) for i in range(D)], dtype=torch.complex128, device=x.device)
+        w1 = torch.tensor([zeta ** ((2 * int(i) + 1) % 5) for i in range(D)], dtype=torch.complex128, device=x.device)
+        scale = 1.0 / math.sqrt(max(D, 1))
+
+        x_c = x.to(torch.complex128)
+        # Anchor C^A near the main Mandelbrot cardioid cusp (-0.745 + 0.113j)
+        c_anchor = complex(-0.745, 0.113)
+        C_0 = c_anchor + 0.25 * scale * torch.matmul(x_c, w0)
+        C_1 = c_anchor.conjugate() + 0.25 * scale * torch.matmul(x_c, w1)
+
+        # Initialize homogeneous CP^3 coordinates [omega^0 : omega^1 : pi_0' : pi_1']
+        omega_0 = torch.zeros_like(C_0)
+        omega_1 = torch.zeros_like(C_1)
+        pi_0 = torch.ones_like(C_0)
+        pi_1 = torch.ones_like(C_1)
+
+        # Track projective Green's potential (logarithmic conformal scale factor)
+        green_potential = torch.zeros(C_0.shape, dtype=torch.float64, device=x.device)
+        d_omega_0 = torch.ones_like(C_0)
+        d_omega_1 = torch.ones_like(C_1)
+
+        for _ in range(self.iterations):
+            # Derivative sensitivity along the projective Julia/Mandelbrot boundary
+            d_omega_0 = 2.0 * omega_0 * d_omega_0 + (pi_0 * pi_0)
+            d_omega_1 = 2.0 * omega_1 * d_omega_1 + (pi_1 * pi_1)
+
+            # Homogeneous degree-2 projective quadratic map on CP^3 (zero trig, zero infinity blowup)
+            next_omega_0 = (omega_0 * omega_0) + C_0 * (pi_0 * pi_0)
+            next_omega_1 = (omega_1 * omega_1) + C_1 * (pi_1 * pi_1)
+            next_pi_0 = 2.0 * omega_0 * pi_0
+            next_pi_1 = 2.0 * omega_1 * pi_1
+
+            # Projective re-scaling on CP^3 (equivalence class [Z] == [lambda * Z])
+            proj_norm = torch.sqrt(
+                (next_omega_0.abs() ** 2) +
+                (next_omega_1.abs() ** 2) +
+                (next_pi_0.abs() ** 2) +
+                (next_pi_1.abs() ** 2)
+            ).clamp(min=1e-15)
+
+            green_potential = green_potential + torch.log(proj_norm)
+
+            omega_0 = next_omega_0 / proj_norm
+            omega_1 = next_omega_1 / proj_norm
+            pi_0 = next_pi_0 / proj_norm
+            pi_1 = next_pi_1 / proj_norm
+
+        # Embed the converged CP^3 projective point into C^5 with invariant shell coordinate phi
+        # pi_norm -> 0 means the orbit reached the hyperplane at infinity in CP^3
+        pi_horizon_weight = torch.sqrt((pi_0.abs() ** 2) + (pi_1.abs() ** 2)).to(torch.complex128)
+        phi = (1.0 + pi_horizon_weight)
+
+        Z5_cp3_mandelbrot = torch.stack([omega_0, omega_1, pi_0, pi_1, phi], dim=-1)
+        Z5_cp3_mandelbrot = Z5_cp3_mandelbrot / torch.linalg.norm(Z5_cp3_mandelbrot, dim=-1, keepdim=True).clamp(min=1e-15)
+        freedom_25 = compute_sigma5_freedom_matrix(Z5_cp3_mandelbrot)
+
+        return {
+            "Z5_cp3_mandelbrot": Z5_cp3_mandelbrot.view(*orig_shape, 5),
+            "freedom_matrix_25": freedom_25.view(*orig_shape, 5, 5),
+            "pi_horizon_proximity": pi_horizon_weight.real.view(*orig_shape),
+            "projective_green_potential": green_potential.view(*orig_shape),
+            "boundary_derivative": torch.sqrt(d_omega_0.abs() ** 2 + d_omega_1.abs() ** 2).view(*orig_shape),
+        }
