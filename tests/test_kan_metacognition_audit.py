@@ -1,4 +1,5 @@
-﻿"""
+﻿from kan_metacognition_core import ProjectiveCP3MandelbrotEncoder
+"""
 Standalone Audit Suite for kan-model-ai (v1.0.0-twistor-kan)
 Verifies:
   1. Analytical TwistorKANLayer univariate erf() + harmonic evaluation and C^5 projection.
@@ -82,4 +83,5 @@ if __name__ == "__main__":
         if name.startswith("test_") and callable(fn):
             fn()
             print(f"[PASS] {name}")
+
 
